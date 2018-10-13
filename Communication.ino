@@ -1,4 +1,5 @@
-#include "fetch.h"
+#include "connection.h"
+#include "controller.h"
 #include "config.h"
 
 char ssid[] = WIFI_SSID; //  your network SSID (name)
@@ -10,6 +11,6 @@ void setup() {
 }
 
 void loop() {
-	fetch(GET, "/secret");
+	start();
 	while (true);
 }

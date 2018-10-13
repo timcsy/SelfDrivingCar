@@ -1,7 +1,7 @@
 #ifndef FETCH_H
 #define FETCH_H
 
-#include "connection.h"
+#include "LWiFi.h"
 
 enum METHOD {GET, POST};
 
