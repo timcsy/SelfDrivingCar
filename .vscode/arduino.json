@@ -1,5 +1,5 @@
 {
-    "sketch": "Communication.ino",
+    "sketch": "SelfDrivingCar.ino",
     "board": "LinkIt:linkit_rtos:linkit_7697",
     "port": "COM12"
 }
