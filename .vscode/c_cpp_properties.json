@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "C:\\Users\\timcsy\\AppData\\Local\\Arduino15\\packages\\LinkIt\\tools\\**",
+                "C:\\Users\\timcsy\\AppData\\Local\\Arduino15\\packages\\LinkIt\\hardware\\linkit_rtos\\0.10.21\\**"
+            ],
+            "forcedInclude": [
+                "C:\\Users\\timcsy\\AppData\\Local\\Arduino15\\packages\\LinkIt\\hardware\\linkit_rtos\\0.10.21\\cores\\arduino\\Arduino.h"
+            ],
+            "intelliSenseMode": "msvc-x64",
+            "browse": {
+                "path": [
+                    "C:\\Users\\timcsy\\AppData\\Local\\Arduino15\\packages\\LinkIt\\tools\\**",
+                    "C:\\Users\\timcsy\\AppData\\Local\\Arduino15\\packages\\LinkIt\\hardware\\linkit_rtos\\0.10.21\\**"
+                ]
+            },
+            "cStandard": "c11",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 3
+}
