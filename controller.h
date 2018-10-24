@@ -3,7 +3,11 @@
 
 #include <ArduinoJson.h>
 
-void start();
-void controller(JsonObject& response);
+void controller(String data);
+String hook();
+String drive(JsonArray& cmd);
+void drive_control();
+String upload();
+void ultrasound();
 
 #endif

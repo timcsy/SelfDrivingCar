@@ -24,7 +24,7 @@ String fetch(int method, String url, String content, bool auth, String server, i
 		client.println(server);
 		client.println("Accept: */*");
 		if (auth) client.println("Authorization: JWT " + token);
-		client.println("Connection: close");
+		// client.println("Connection: close");
 		if (method == POST) client.print("Content-Length: ");
 		if (method == POST) client.println(content.length());
 		if (method == POST) client.println("Content-Type: application/json");

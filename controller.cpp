@@ -1,25 +1,225 @@
 #include <Arduino.h>
 #include "controller.h"
 #include "fetch.h"
+#include "config.h"
 
-enum OPCODE {};
+#define CMD_MAX 1024
+#define RECORD_MAX 50
 
-StaticJsonBuffer<1024> jsonBuffer;
+struct Command {
+	int Vr;
+	int Vl;
+	int dt;
+};
 
-void start() {
-	String data = fetch(GET, "/api/v1");
-	JsonObject& res = jsonBuffer.parseObject(data);
+struct Record {
+	float F;
+	float R;
+	float L;
+	int Vr;
+	int Vl;
+	char C[25];
+};
 
-  // Test if parsing succeeds.
-  if (!res.success()) {
-    Serial.println("parseObject() failed");
-    return;
-  }
+StaticJsonBuffer<65536> jsonBuffer;
 
-	controller(res);
+int Vr = 0, Vl = 0, dt = -1; // dt is milliseconds (ms)
+int Vrc = 0, Vlc = 0; // corrected velocity
+unsigned long last_time = millis();
+char Control_id[25] = {0};
+float F = 0, last_F[2] = {0, 0}, R = 0, last_R[2] = {0, 0}, L = 0, last_L[2] = {0, 0};
+int stuck = 0;
+
+bool stopped = false;
+
+Command cmdArray[CMD_MAX]; // Queue of Commands
+int cmd_index = 0, cmd_num = 0;
+
+Record recordArray[RECORD_MAX]; // Round Queue of Records
+int last_record_index = 0;
+int record_index = 0;
+StaticJsonBuffer<4096> recordBuffer;
+
+void controller(String data) {
+	while (true) {
+		if (stopped) {
+			stopped = false;
+			fetch(POST, "/api/v1/controls", "{\"op\":\"hook\"}");
+		}
+		jsonBuffer.clear();
+		JsonObject& res = jsonBuffer.parseObject(data);
+		if (!res.success()) continue;
+		const char * _id = res["_id"];
+		if (strcmp(Control_id, _id) != 0) {
+			strcpy(Control_id, _id);
+			String op = res["op"];
+
+			if (op == "drive") data = drive(res["cmd"]);
+			else data = hook();
+		} else data = hook();
+	}
 }
 
-void controller(JsonObject& response) {
-	int op = response["op"];
-	Serial.println(op);
+void correct() {
+	Vrc = Vr; Vlc = Vl;
+	int Vav = (((Vr > 0)? Vr: -Vr) + ((Vl > 0)? Vl: -Vl)) / 2;
+	if (Vr == 0 && Vl == 0) {Vrc = 0; Vlc = 0;} // if it stops then stop
+	else if (F < 10) { // if there is an obstacle in the front
+		if (R < 5 && L < 5) {Vrc = -Vav; Vlc = -Vav;} // if it stuck
+		else if (R > L) {Vrc = -Vav; Vlc = Vav;} // if there exist right space, then turn right
+		else {Vlc = -Vav; Vrc = Vav;} // if there exist left space, then turn left
+	}	else if (R < 5) {
+		Vlc = -Vav; Vrc = Vav; // if there is no right space, then turn left
+	} else if (L < 5) { // if there is no right space, then turn left
+		Vlc = Vav; Vrc = -Vav;
+	} else if (F < 200 && R < 50 && L < 50) { // the controlable range, drive in the middle
+		if (R > L) {
+			float c = (R - L) / (R + L);
+			Vrc = Vr * (1.0 - c);
+			if (Vr >= 50 && Vrc < 50) Vrc = 50;
+			Vlc = Vl;
+		}	else if (L > R) {
+			float c = (L - R) / (R + L);
+			Vrc = Vr;
+			Vlc = Vl * (1.0 - c);
+			if (Vl >= 50 && Vlc < 50) Vlc = 50;
+		} else {Vrc = -Vav; Vlc = Vav;}
+	}
+	if ((-0.1 < last_F[1] - last_F[0] || last_F[1] - last_F[0] < 0.1) &&
+			(-0.1 < last_R[1] - last_R[0] || last_R[1] - last_R[0] < 0.1) &&
+			(-0.1 < last_L[1] - last_L[0] || last_L[1] - last_L[0] < 0.1)) { // it it is stuck
+		stuck++;
+	} else {
+		stuck = 0;
+	}
+	if (stuck > 5) {stuck = 0; Vrc = -Vav; Vlc = -Vav;}
+}
+
+String hook() {
+	String data = fetch(GET, "/api/v1");
+	return data;
+}
+
+String drive(JsonArray& cmd) {
+	int i;
+	for (i = 0; i < cmd.size() && i < CMD_MAX; i++) {
+		cmdArray[i].Vr = cmd[i]["Vr"];
+		cmdArray[i].Vl = cmd[i]["Vl"];
+		cmdArray[i].dt = cmd[i]["dt"];
+	}
+	cmd_index = 0;
+	cmd_num = i;
+	if (i) {
+		Vr = cmdArray[0].Vr;
+		Vl = cmdArray[0].Vl;
+		dt = cmdArray[0].dt;
+	}
+	String data = upload();
+	correct();
+	return data;
+}
+
+void stop() {
+	Vr = 0;
+	Vl = 0;
+	stopped = true;
+}
+
+void drive_control() {
+	unsigned long time = millis();
+	if (dt >= 0 && time - last_time >= dt) {
+		last_time = time;
+		if (cmd_index < cmd_num) {
+			Vr = cmdArray[cmd_index].Vr;
+			Vl = cmdArray[cmd_index].Vl;
+			dt = cmdArray[cmd_index].dt;
+			cmd_index++;
+		} else if (cmd_index == cmd_num) {
+			cmd_index++;
+			stop();
+		}
+	}
+	correct();
+	analogWrite(rightpin1, (Vrc > 0)? Vrc: 0);
+	analogWrite(rightpin2, (Vrc < 0)? -Vrc: 0);
+	analogWrite(leftpin1, (Vlc > 0)? Vlc: 0);
+	analogWrite(leftpin2, (Vlc < 0)? -Vlc: 0);
+}
+
+void saveToBuffer() {
+	recordArray[record_index].F = F;
+	recordArray[record_index].L = L;
+	recordArray[record_index].R = R;
+	recordArray[record_index].Vr = Vrc;
+	recordArray[record_index].Vl = Vlc;
+	strcpy(recordArray[record_index].C, Control_id);
+
+	record_index = (record_index + 1) % RECORD_MAX;
+}
+
+float distance(int trig, int echo) {
+	float duration;
+	pinMode(trig, OUTPUT);
+	pinMode(echo, INPUT);
+	digitalWrite(trig, HIGH);
+	delayMicroseconds(10); // 給予 trig 10us TTL pulse，讓模組發射聲波
+	digitalWrite(trig, LOW);
+	duration = pulseIn(echo, HIGH, 200000); // 紀錄echo電位從high到low的時間，就是超音波來回的時間，若0.2秒內沒收到超音波則回傳0
+	return duration / 29.0 / 2.0; // 聲速340m/s ，換算後約每29微秒走一公分，超音波來回所以再除2
+}
+
+void ultrasound() {
+	F = distance(fronttrig, frontecho);
+	L = distance(lefttrig, leftecho);
+	R = distance(rightttrig, righttecho);
+
+	if (F < 1000) {
+		last_F[0] = last_F[1];
+		last_F[1] = F;
+	} else { // extremely cases(eps or inf)
+		if (last_F[0] < 10 && last_F[1] < 10) F = -1;
+		else F = last_F[1];
+	}
+	
+	if (R < 1000) {
+		last_R[0] = last_R[1];
+		last_R[1] = R;
+	} else { // extremely cases(eps or inf)
+		if (last_R[0] < 10 && last_R[1] < 10) R = -1;
+		else R = last_R[1];
+	}
+	
+	if (L < 1000) {
+		last_L[0] = last_L[1];
+		last_L[1] = L;
+	} else { // extremely cases(eps or inf)
+		if (last_L[0] < 10 && last_L[1] < 10) L = -1;
+		else L = last_L[1];
+	}
+
+	saveToBuffer();
+}
+
+String upload() {
+	int last = last_record_index, cur = record_index;
+	recordBuffer.clear();
+	JsonObject& req = recordBuffer.createObject();
+	JsonArray& records = req.createNestedArray("records");
+	for (int i = last; i != cur; i = (i + 1) % RECORD_MAX) {
+		if (recordArray[i].C[0]) {
+			JsonObject& rec = recordBuffer.createObject();
+			rec["F"] = recordArray[i].F;
+			rec["R"] = recordArray[i].R;
+			rec["L"] = recordArray[i].L;
+			rec["Vr"] = recordArray[i].Vr;
+			rec["Vl"] = recordArray[i].Vl;
+			rec["C"] = recordArray[i].C;
+			records.add(rec);
+		}
+	}
+	String content;
+	req.printTo(content);
+	String data = fetch(POST, "/api/v1/records", content);
+	last_record_index = cur;
+	return data;
 }
