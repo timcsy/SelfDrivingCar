@@ -43,8 +43,8 @@ void setup() {
 	timer0.begin();
 	timer1.begin();
   // start the execution
-  timer0.start(256, LTIMER_REPEAT_MODE, _callback0, NULL);
-	timer1.start(200, LTIMER_REPEAT_MODE, _callback1, NULL);
+  timer0.start(128, LTIMER_REPEAT_MODE, _callback0, NULL);
+	timer1.start(250, LTIMER_REPEAT_MODE, _callback1, NULL);
 
 	wifi_connect(ssid, pass);
 }

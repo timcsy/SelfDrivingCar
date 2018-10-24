@@ -41,6 +41,7 @@ int record_index = 0;
 StaticJsonBuffer<4096> recordBuffer;
 
 void controller(String data) {
+	String op;
 	while (true) {
 		if (stopped) {
 			stopped = false;
@@ -52,11 +53,13 @@ void controller(String data) {
 		const char * _id = res["_id"];
 		if (strcmp(Control_id, _id) != 0) {
 			strcpy(Control_id, _id);
-			String op = res["op"];
+			String _op = res["op"];
+			op = _op;
 
 			if (op == "drive") data = drive(res["cmd"]);
 			else data = hook();
-		} else data = hook();
+		} else if (op == "drive") data = upload();
+		else data = hook();
 	}
 }
 
@@ -64,23 +67,23 @@ void correct() {
 	Vrc = Vr; Vlc = Vl;
 	int Vav = (((Vr > 0)? Vr: -Vr) + ((Vl > 0)? Vl: -Vl)) / 2;
 	if (Vr == 0 && Vl == 0) {Vrc = 0; Vlc = 0;} // if it stops then stop
-	else if (F < Vav * 0.05) { // if there is an obstacle in the front
+	else if (F < 0.05 * Vav) { // if there is an obstacle in the front
 		if (R > L) {Vrc = -Vav; Vlc = Vav;} // if there exist right space, then turn right
 		else {Vlc = -Vav; Vrc = Vav;} // if there exist left space, then turn left
-	}	else if (R < Vav * 0.02) {
+	}	else if (R < 0.02 * Vav) {
 		Vlc = -Vav; Vrc = Vav; // if there is no right space, then turn left
-	} else if (L < Vav * 0.02) { // if there is no right space, then turn left
+	} else if (L < 0.02 * Vav) { // if there is no right space, then turn left
 		Vlc = Vav; Vrc = -Vav;
-	} else if (F < 200 && R < 50 && L < 50) { // the controlable range, drive in the middle
+	} else if (F < 200 && R < 200 && L < 200) { // the controlable range, drive in the middle
 		if (R > L) {
-			float c = (R - L) / (R + L);
-			Vrc = Vr * (1.0 - c);
+			float c = (float)(R - L) / (R + L);
+			Vrc = (1.0 - c) * Vr;
 			if (Vr >= 50 && Vrc < 50) Vrc = 50;
 			Vlc = Vl;
 		}	else if (L > R) {
-			float c = (L - R) / (R + L);
+			float c = (float)(L - R) / (R + L);
 			Vrc = Vr;
-			Vlc = Vl * (1.0 - c);
+			Vlc = (1.0 - c) * Vl;
 			if (Vl >= 50 && Vlc < 50) Vlc = 50;
 		} else {Vrc = -Vav; Vlc = Vav;}
 	}
@@ -163,7 +166,7 @@ float distance(int trig, int echo) {
 	digitalWrite(trig, HIGH);
 	delayMicroseconds(10); // 給予 trig 10us TTL pulse，讓模組發射聲波
 	digitalWrite(trig, LOW);
-	duration = pulseIn(echo, HIGH, 200000); // 紀錄echo電位從high到low的時間，就是超音波來回的時間，若0.2秒內沒收到超音波則回傳0
+	duration = pulseIn(echo, HIGH, 40000); // 紀錄echo電位從high到low的時間，就是超音波來回的時間，若0.04秒內沒收到超音波則回傳0
 	return duration / 29.0 / 2.0; // 聲速340m/s ，換算後約每29微秒走一公分，超音波來回所以再除2
 }
 
@@ -172,7 +175,7 @@ void ultrasound() {
 	L = distance(lefttrig, leftecho);
 	R = distance(rightttrig, righttecho);
 
-	if (F < 1000) {
+	if (F < 1000 && F != 0) {
 		last_F[0] = last_F[1];
 		last_F[1] = F;
 	} else { // extremely cases(eps or inf)
@@ -180,7 +183,7 @@ void ultrasound() {
 		else F = last_F[1];
 	}
 	
-	if (R < 1000) {
+	if (R < 1000 && R != 0) {
 		last_R[0] = last_R[1];
 		last_R[1] = R;
 	} else { // extremely cases(eps or inf)
@@ -188,7 +191,7 @@ void ultrasound() {
 		else R = last_R[1];
 	}
 	
-	if (L < 1000) {
+	if (L < 1000 && L != 0) {
 		last_L[0] = last_L[1];
 		last_L[1] = L;
 	} else { // extremely cases(eps or inf)
@@ -218,6 +221,7 @@ String upload() {
 	}
 	String content;
 	req.printTo(content);
+	Serial.println(content);
 	String data = fetch(POST, "/api/v1/records", content);
 	last_record_index = cur;
 	return data;
