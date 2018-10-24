@@ -64,13 +64,12 @@ void correct() {
 	Vrc = Vr; Vlc = Vl;
 	int Vav = (((Vr > 0)? Vr: -Vr) + ((Vl > 0)? Vl: -Vl)) / 2;
 	if (Vr == 0 && Vl == 0) {Vrc = 0; Vlc = 0;} // if it stops then stop
-	else if (F < 10) { // if there is an obstacle in the front
-		if (R < 5 && L < 5) {Vrc = -Vav; Vlc = -Vav;} // if it stuck
-		else if (R > L) {Vrc = -Vav; Vlc = Vav;} // if there exist right space, then turn right
+	else if (F < Vav * 0.05) { // if there is an obstacle in the front
+		if (R > L) {Vrc = -Vav; Vlc = Vav;} // if there exist right space, then turn right
 		else {Vlc = -Vav; Vrc = Vav;} // if there exist left space, then turn left
-	}	else if (R < 5) {
+	}	else if (R < Vav * 0.02) {
 		Vlc = -Vav; Vrc = Vav; // if there is no right space, then turn left
-	} else if (L < 5) { // if there is no right space, then turn left
+	} else if (L < Vav * 0.02) { // if there is no right space, then turn left
 		Vlc = Vav; Vrc = -Vav;
 	} else if (F < 200 && R < 50 && L < 50) { // the controlable range, drive in the middle
 		if (R > L) {
