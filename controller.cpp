@@ -18,31 +18,46 @@ struct Record {
 	float L;
 	int Vr;
 	int Vl;
+	int x;
+	int y;
 	char C[25];
 };
 
 StaticJsonBuffer<65536> jsonBuffer;
 
+// Drive------------------------------------------------------------------------------
 int Vr = 0, Vl = 0, dt = -1; // dt is milliseconds (ms)
 int Vrc = 0, Vlc = 0; // corrected velocity
 unsigned long last_time = millis();
 char Control_id[25] = {0};
 float F = 0, last_F[2] = {0, 0}, R = 0, last_R[2] = {0, 0}, L = 0, last_L[2] = {0, 0};
 int stuck = 0;
+//------------------------------------------------------------------------------------
 
 bool stopped = false;
 
+// Command----------------------------------------------------------------------------
 Command cmdArray[CMD_MAX]; // Queue of Commands
 int cmd_index = 0, cmd_num = 0;
+//------------------------------------------------------------------------------------
 
+// Record-----------------------------------------------------------------------------
 Record recordArray[RECORD_MAX]; // Round Queue of Records
 int last_record_index = 0;
 int record_index = 0;
 StaticJsonBuffer<4096> recordBuffer;
+//------------------------------------------------------------------------------------
+
+// Game Server------------------------------------------------------------------------
+int last_x = -1, x = -1, next_x = -1, last_y = -1, y = -1, next_y = -1;
+String message;
+//------------------------------------------------------------------------------------
 
 void controller(String data) {
 	String op;
 	while (true) {
+		get_position();
+
 		if (stopped) {
 			stopped = false;
 			fetch(POST, "/api/v1/controls", "{\"op\":\"hook\"}");
@@ -61,6 +76,10 @@ void controller(String data) {
 		} else if (op == "drive") data = upload();
 		else data = hook();
 	}
+}
+
+void controller_setup() {
+	maze_setup();
 }
 
 void correct() {
@@ -87,6 +106,50 @@ void correct() {
 			if (Vl >= 50 && Vlc < 50) Vlc = 50;
 		} else {Vrc = -Vav; Vlc = Vav;}
 	}
+
+	// if (F < R && L < R && R > 20) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F > L && R > L && L < 20) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F < R && F < L && F < 20) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F > (R + L) / 2 && F > 20) {Vrc = Vav; Vlc = Vav;}
+	// else if (F < L && R < L && L > 20) {Vrc = Vav; Vlc = -Vav;}
+	// else if (F > R && L > R && R < 20) {Vrc = Vav; Vlc = -Vav;}
+	// else if (F < (R + L) / 2 && F < 20) {Vrc = -Vav; Vlc = Vav;}
+	// else {Vrc = -Vav; Vlc = Vav;}
+
+	// if (F < 20 && L < 10) {Vrc = -Vav; Vlc = Vav;}
+	// else if (L < 10) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F < 20) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F > 20) {Vrc = Vav; Vlc = Vav;}
+	// else if (F < 20 && R < 20) {Vrc = Vav; Vlc = -Vav;}
+	// else if (R < 20) {Vrc = Vav; Vlc = -Vav;}
+	// else {Vrc = -Vav; Vlc = Vav;}
+
+	// if (F < R && L < R) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F > L && R > L) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F < R && F < L) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F > (R + L) / 2) {Vrc = Vav; Vlc = Vav;}
+	// else if (F < L && R < L) {Vrc = Vav; Vlc = -Vav;}
+	// else if (F > R && L > R) {Vrc = Vav; Vlc = -Vav;}
+	// else if (F < (R + L) / 2) {Vrc = -Vav; Vlc = Vav;}
+	// else {Vrc = -Vav; Vlc = Vav;}
+
+	// if (F < R && L < R && R > 20) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F > L && R > L && L < 20) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F < R && F < L && F < 20) {Vrc = -Vav; Vlc = Vav;}
+	// else if (F > (R + L) / 2 && F > 20) {Vrc = Vav; Vlc = Vav;}
+	// else if (F < L && R < L && L > 20) {Vrc = Vav; Vlc = -Vav;}
+	// else if (F > R && L > R && R < 20) {Vrc = Vav; Vlc = -Vav;}
+	// else if (F < (R + L) / 2 && F < 20) {Vrc = -Vav; Vlc = Vav;}
+	// else {Vrc = -Vav; Vlc = Vav;}
+
+	// if (F < 0.02 * Vav) { // if there is an obstacle in the front
+	// 	Vrc = -Vav; Vlc = Vav;
+	// }	else if (R < 0.02 * Vav) {
+	// 	Vlc = -Vav; Vrc = Vav; // if there is no right space, then turn left
+	// } else if (L < 0.02 * Vav) { // if there is no right space, then turn left
+	// 	Vlc = Vav; Vrc = -Vav;
+	// }
+
 	if ((-0.1 < last_F[1] - last_F[0] || last_F[1] - last_F[0] < 0.1) &&
 			(-0.1 < last_R[1] - last_R[0] || last_R[1] - last_R[0] < 0.1) &&
 			(-0.1 < last_L[1] - last_L[0] || last_L[1] - last_L[0] < 0.1)) { // it it is stuck
@@ -94,7 +157,7 @@ void correct() {
 	} else {
 		stuck = 0;
 	}
-	if (stuck > 5) {stuck = 0; Vrc = -Vav; Vlc = -Vav;}
+	if (stuck > 5) {stuck = 0; Vrc = -Vav; Vlc = Vav;}
 }
 
 String hook() {
@@ -154,6 +217,8 @@ void saveToBuffer() {
 	recordArray[record_index].R = R;
 	recordArray[record_index].Vr = Vrc;
 	recordArray[record_index].Vl = Vlc;
+	recordArray[record_index].x = x;
+	recordArray[record_index].y = y;
 	strcpy(recordArray[record_index].C, Control_id);
 
 	record_index = (record_index + 1) % RECORD_MAX;
@@ -166,7 +231,7 @@ float distance(int trig, int echo) {
 	digitalWrite(trig, HIGH);
 	delayMicroseconds(10); // 給予 trig 10us TTL pulse，讓模組發射聲波
 	digitalWrite(trig, LOW);
-	duration = pulseIn(echo, HIGH, 40000); // 紀錄echo電位從high到low的時間，就是超音波來回的時間，若0.04秒內沒收到超音波則回傳0
+	duration = pulseIn(echo, HIGH, 20000); // 紀錄echo電位從high到low的時間，就是超音波來回的時間，若0.02秒內沒收到超音波則回傳0
 	return duration / 29.0 / 2.0; // 聲速340m/s ，換算後約每29微秒走一公分，超音波來回所以再除2
 }
 
@@ -215,6 +280,8 @@ String upload() {
 			rec["L"] = recordArray[i].L;
 			rec["Vr"] = recordArray[i].Vr;
 			rec["Vl"] = recordArray[i].Vl;
+			rec["x"] = recordArray[i].x;
+			rec["y"] = recordArray[i].y;
 			rec["C"] = recordArray[i].C;
 			records.add(rec);
 		}
@@ -225,4 +292,35 @@ String upload() {
 	String data = fetch(POST, "/api/v1/records", content);
 	last_record_index = cur;
 	return data;
+}
+
+void light(int red, int green, int blue) {
+	analogWrite(R_LED, red);
+	analogWrite(G_LED, green);
+	analogWrite(B_LED, blue);
+}
+
+void connection_setup() {
+	game_server_setup(GAME_SERVER, GAME_ID, GAME_TEAM);
+}
+
+void game_server_parser(String res) {
+	// position 暫時
+	if (res.startsWith("position ")) {
+		char str[128];
+		strcpy(str, res.c_str());
+		char * pch;
+		pch = strtok(str, " "); // postion
+		pch = strtok(NULL, " "); // x
+		last_x = x;
+		x = String(pch).toInt();
+		pch = strtok(NULL, " "); // y
+		last_y = y;
+		y = String(pch).toInt();
+	}
+}
+
+void get_position() {
+	String res = fetch_game_server("position");
+	game_server_parser(res);
 }
